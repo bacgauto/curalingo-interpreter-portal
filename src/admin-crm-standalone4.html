@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Curalingo Admin CRM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white">
+    <div id="app"></div>
+
+    <script type="module">
+        import { html, render, useState, useEffect } from 'https://cdn.jsdelivr.net/npm/htm@3.1.1/preact/standalone.module.js';
+
+        function AdminCRM() {
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [adminPass, setAdminPass] = useState('');
+            const [currentAdmin, setCurrentAdmin] = useState(null);
+            const [view, setView] = useState('overview');
+            const [allRecords, setAllRecords] = useState([]);
+            const [interpreters, setInterpreters] = useState([]);
+            const [adminMessages, setAdminMessages] = useState([]);
+            const [teamMembers, setTeamMembers] = useState([]);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [showNotifModal, setShowNotifModal] = useState(false);
+            const [showClearModal, setShowClearModal] = useState(false);
+            const [showTeamModal, setShowTeamModal] = useState(false);
+            const [showInterpreterModal, setShowInterpreterModal] = useState(false);
+            const [selectedPhoto, setSelectedPhoto] = useState(null);
+            const [selectedMessage, setSelectedMessage] = useState(null);
+            const [editingInterpreter, setEditingInterpreter] = useState(null);
+            const [newNotif, setNewNotif] = useState({
+                type: 'announcement',
+                title: '',
+                description: '',
+                date: '',
+                priority: 'medium',
+                tags: ''
+            });
+            const [newTeamMember, setNewTeamMember] = useState({
+                name: '',
+                email: '',
+                role: 'manager',
+                permissions: []
+            });
+            const [newInterpreter, setNewInterpreter] = useState({
+                name: '',
+                email: '',
+                phone: '',
+                languages: '',
+                workSchedule: { start: '09:00', end: '17:00' },
+                status: 'active'
+            });
+
+            useEffect(() => {
+                if (isLoggedIn) loadData();
+            }, [isLoggedIn]);
+
+            function loadData() {
+                const records = JSON.parse(localStorage.getItem('admin_allRecords') || '[]');
+                setAllRecords(records);
+
+                const messages = JSON.parse(localStorage.getItem('admin_messages') || '[]');
+                setAdminMessages(messages);
+
+                const team = JSON.parse(localStorage.getItem('admin_team') || '[]');
+                setTeamMembers(team);
+
+                const interp = JSON.parse(localStorage.getItem('admin_interpreters') || '[]');
+                setInterpreters(interp);
+            }
+
+            function handleLogin() {
+                if (adminPass === 'admin123') {
+                    const admin = {
+                        id: 'admin_1',
+                        name: 'Admin',
+                        email: 'admin@curalingo.com',
+                        role: 'superadmin',
+                        permissions: ['all']
+                    };
+                    setCurrentAdmin(admin);
+                    setIsLoggedIn(true);
+                } else {
+                    alert('Invalid password');
+                }
+            }
+
+            function hasPermission(permission) {
+                if (!currentAdmin) return false;
+                if (currentAdmin.permissions.includes('all')) return true;
+                return currentAdmin.permissions.includes(permission);
+            }
+
+            function sendNotification() {
+                if (!hasPermission('send_notifications') && !hasPermission('all')) {
+                    alert('You do not have permission to send notifications');
+                    return;
+                }
+
+                if (!newNotif.title || !newNotif.description) {
+                    alert('Fill all fields');
+                    return;
+                }
+
+                const notification = {
+                    id: 'n_' + Date.now(),
+                    type: newNotif.type,
+                    title: newNotif.title,
+                    description: newNotif.description,
+                    date: newNotif.date || new Date().toISOString(),
+                    priority: newNotif.priority,
+                    tags: newNotif.tags.split(',').map(t => t.trim()).filter(t => t),
+                    read: false
+                };
+
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith('notifications_')) {
+                        const notifs = JSON.parse(localStorage.getItem(key));
+                        notifs.push(notification);
+                        localStorage.setItem(key, JSON.stringify(notifs));
+                    }
+                }
+
+                alert('Notification sent to all interpreters!');
+                setShowNotifModal(false);
+                setNewNotif({type: 'announcement', title: '', description: '', date: '', priority: 'medium', tags: ''});
+            }
+
+            function addOrUpdateInterpreter() {
+                if (!hasPermission('manage_interpreters') && !hasPermission('all')) {
+                    alert('No permission to manage interpreters');
+                    return;
+                }
+
+                if (!newInterpreter.name || !newInterpreter.email) {
+                    alert('Name and email required');
+                    return;
+                }
+
+                const langArray = newInterpreter.languages.split(',').map(l => l.trim()).filter(l => l);
+                
+                if (editingInterpreter) {
+                    const updated = interpreters.map(i => i.id === editingInterpreter.id ? {
+                        ...editingInterpreter,
+                        ...newInterpreter,
+                        lang_pairs: langArray,
+                        updatedAt: new Date().toISOString()
+                    } : i);
+                    localStorage.setItem('admin_interpreters', JSON.stringify(updated));
+                    setInterpreters(updated);
+                    alert('Interpreter updated!');
+                } else {
+                    const interpreter = {
+                        id: 'interp_' + Date.now(),
+                        ...newInterpreter,
+                        lang_pairs: langArray,
+                        addedBy: currentAdmin.name,
+                        addedAt: new Date().toISOString()
+                    };
+                    const updated = [...interpreters, interpreter];
+                    localStorage.setItem('admin_interpreters', JSON.stringify(updated));
+                    setInterpreters(updated);
+                    alert('Interpreter added!');
+                }
+
+                setShowInterpreterModal(false);
+                setEditingInterpreter(null);
+                setNewInterpreter({name: '', email: '', phone: '', languages: '', workSchedule: {start: '09:00', end: '17:00'}, status: 'active'});
+            }
+
+            function editInterpreter(interp) {
+                setEditingInterpreter(interp);
+                setNewInterpreter({
+                    name: interp.name,
+                    email: interp.email,
+                    phone: interp.phone || '',
+                    languages: interp.lang_pairs.join(', '),
+                    workSchedule: interp.workSchedule,
+                    status: interp.status
+                });
+                setShowInterpreterModal(true);
+            }
+
+            function toggleInterpreterStatus(id) {
+                if (!hasPermission('manage_interpreters') && !hasPermission('all')) {
+                    alert('No permission');
+                    return;
+                }
+                const updated = interpreters.map(i => i.id === id ? {...i, status: i.status === 'active' ? 'inactive' : 'active'} : i);
+                localStorage.setItem('admin_interpreters', JSON.stringify(updated));
+                setInterpreters(updated);
+            }
+
+            function deleteInterpreter(id) {
+                if (!hasPermission('manage_interpreters') && !hasPermission('all')) {
+                    alert('No permission');
+                    return;
+                }
+                if (confirm('Delete this interpreter?')) {
+                    const updated = interpreters.filter(i => i.id !== id);
+                    localStorage.setItem('admin_interpreters', JSON.stringify(updated));
+                    setInterpreters(updated);
+                }
+            }
+
+            function addTeamMember() {
+                if (!hasPermission('manage_team') && !hasPermission('all')) {
+                    alert('You do not have permission to manage team');
+                    return;
+                }
+
+                if (!newTeamMember.name || !newTeamMember.email) {
+                    alert('Fill all fields');
+                    return;
+                }
+
+                const member = {
+                    id: 'team_' + Date.now(),
+                    ...newTeamMember,
+                    addedBy: currentAdmin.name,
+                    addedAt: new Date().toISOString()
+                };
+
+                const updated = [...teamMembers, member];
+                localStorage.setItem('admin_team', JSON.stringify(updated));
+                setTeamMembers(updated);
+                setShowTeamModal(false);
+                setNewTeamMember({name: '', email: '', role: 'manager', permissions: []});
+                alert('Team member added successfully!');
+            }
+
+            function removeTeamMember(id) {
+                if (!hasPermission('manage_team') && !hasPermission('all')) {
+                    alert('You do not have permission to manage team');
+                    return;
+                }
+
+                if (confirm('Remove this team member?')) {
+                    const updated = teamMembers.filter(m => m.id !== id);
+                    localStorage.setItem('admin_team', JSON.stringify(updated));
+                    setTeamMembers(updated);
+                }
+            }
+
+            function markMessageRead(id) {
+                const updated = adminMessages.map(m => m.id === id ? {...m, read: true} : m);
+                setAdminMessages(updated);
+                localStorage.setItem('admin_messages', JSON.stringify(updated));
+            }
+
+            function exportData() {
+                const data = {
+                    records: allRecords,
+                    messages: adminMessages,
+                    team: teamMembers,
+                    interpreters: interpreters,
+                    exportDate: new Date().toISOString()
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'curalingo-backup-' + new Date().toISOString().split('T')[0] + '.json';
+                a.click();
+                URL.revokeObjectURL(url);
+                alert('Data exported successfully!');
+            }
+
+            function clearHouse() {
+                if (!hasPermission('manage_data') && !hasPermission('all')) {
+                    alert('You do not have permission to manage data');
+                    return;
+                }
+
+                exportData();
+                setTimeout(() => {
+                    const cutoff = new Date();
+                    cutoff.setMonth(cutoff.getMonth() - 1);
+                    const recent = allRecords.filter(r => new Date(r.checkInTime) > cutoff);
+                    localStorage.setItem('admin_allRecords', JSON.stringify(recent));
+                    setAllRecords(recent);
+                    setShowClearModal(false);
+                    alert('Clear House complete!');
+                    loadData();
+                }, 1000);
+            }
+
+            function getTodayStats() {
+                const today = new Date().toDateString();
+                const todayRecords = allRecords.filter(r => new Date(r.checkInTime).toDateString() === today);
+                const clockedIn = todayRecords.filter(r => r.checkInTime && !r.checkOutTime).length;
+                const completed = todayRecords.filter(r => r.checkOutTime).length;
+                const late = todayRecords.filter(r => r.status === 'late').length;
+                return {total: todayRecords.length, clockedIn, completed, late};
+            }
+
+            const filtered = allRecords.filter(r => 
+                r.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                r.date?.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            const unreadMessages = adminMessages.filter(m => !m.read).length;
+
+            if (!isLoggedIn) {
+                return html`
+                    <div class="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4">
+                        <div class="bg-gray-800 rounded-lg shadow-2xl p-8 max-w-md w-full border border-gray-700">
+                            <div class="text-center mb-8">
+                                <h1 class="text-4xl font-bold text-white mb-2">Admin CRM</h1>
+                                <p class="text-gray-400">Management Dashboard</p>
+                            </div>
+                            <input
+                                type="password"
+                                placeholder="Enter admin password"
+                                value=${adminPass}
+                                onInput=${(e) => setAdminPass(e.target.value)}
+                                onKeyPress=${(e) => e.key === 'Enter' && handleLogin()}
+                                class="w-full px-4 py-3 mb-4 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                            />
+                            <button onClick=${handleLogin} class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg">Login</button>
+                            <p class="text-gray-500 text-sm text-center mt-6">Demo password: admin123</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const stats = getTodayStats();
+
+            const navItems = [
+                {id: 'overview', label: '📊 Overview'},
+                {id: 'interpreters', label: '👥 Interpreters', badge: interpreters.length},
+                {id: 'records', label: '⏱️ Clock Records'},
+                {id: 'messages', label: '💬 Messages', badge: unreadMessages},
+                {id: 'team', label: '👔 Team'},
+                {id: 'notifications', label: '🔔 Notifications'},
+                {id: 'settings', label: '⚙️ Settings'}
+            ];
+
+            return html`
+                <div class="min-h-screen bg-gray-900 text-white">
+                    <header class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-4">
+                                <h1 class="text-2xl font-bold text-blue-400">Admin CRM</h1>
+                                <span class="text-sm text-gray-400">${currentAdmin?.name}</span>
+                            </div>
+                            <div class="flex items-center space-x-4">
+                                <button onClick=${exportData} class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
+                                    ⬇️ Export
+                                </button>
+                                ${hasPermission('manage_data') || hasPermission('all') ? html`
+                                    <button onClick=${() => setShowClearModal(true)} class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm">
+                                        🗑️ Clear House
+                                    </button>
+                                ` : ''}
+                                <button onClick=${() => setIsLoggedIn(false)} class="text-gray-400 hover:text-white text-sm">Logout</button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <div class="flex">
+                        <aside class="w-64 bg-gray-800 min-h-screen border-r border-gray-700 p-4">
+                            <nav class="space-y-2">
+                                ${navItems.map(item => html`
+                                    <button
+                                        key=${item.id}
+                                        onClick=${() => setView(item.id)}
+                                        class=${`w-full text-left px-4 py-3 rounded-lg flex items-center justify-between ${view === item.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
+                                    >
+                                        <span>${item.label}</span>
+                                        ${item.badge > 0 ? html`<span class="bg-red-500 text-white text-xs rounded-full px-2 py-1">${item.badge}</span>` : ''}
+                                    </button>
+                                `)}
+                            </nav>
+                        </aside>
+
+                        <main class="flex-1 p-6 overflow-auto">
+                            ${view === 'overview' ? html`
+                                <div class="space-y-6">
+                                    <h2 class="text-3xl font-bold">Overview</h2>
+                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                        <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                            <p class="text-gray-400 text-sm">Total Today</p>
+                                            <p class="text-3xl font-bold">${stats.total}</p>
+                                        </div>
+                                        <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                            <p class="text-gray-400 text-sm">Working</p>
+                                            <p class="text-3xl font-bold text-green-400">${stats.clockedIn}</p>
+                                        </div>
+                                        <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                            <p class="text-gray-400 text-sm">Late</p>
+                                            <p class="text-3xl font-bold text-yellow-400">${stats.late}</p>
+                                        </div>
+                                        <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                            <p class="text-gray-400 text-sm">Complete</p>
+                                            <p class="text-3xl font-bold">${stats.completed}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${view === 'interpreters' ? html`
+                                <div class="space-y-6">
+                                    <div class="flex items-center justify-between">
+                                        <h2 class="text-3xl font-bold">Interpreters</h2>
+                                        ${hasPermission('manage_interpreters') || hasPermission('all') ? html`
+                                            <button onClick=${() => {setEditingInterpreter(null); setShowInterpreterModal(true);}} class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                                                ➕ Add Interpreter
+                                            </button>
+                                        ` : ''}
+                                    </div>
+
+                                    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        ${interpreters.length > 0 ? interpreters.map(interp => html`
+                                            <div key=${interp.id} class="bg-gray-700 rounded-lg p-4 mb-3">
+                                                <div class="flex items-center justify-between">
+                                                    <div class="flex-1">
+                                                        <p class="font-semibold text-lg">${interp.name}</p>
+                                                        <p class="text-sm text-gray-400">${interp.email}</p>
+                                                        <div class="flex flex-wrap gap-1 mt-2">
+                                                            ${interp.lang_pairs.map((lang, i) => html`
+                                                                <span key=${i} class="text-xs px-2 py-1 bg-blue-900 text-blue-300 rounded">${lang}</span>
+                                                            `)}
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex items-center space-x-3">
+                                                        <span class=${`px-3 py-1 rounded-full text-xs ${interp.status === 'active' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
+                                                            ${interp.status?.toUpperCase()}
+                                                        </span>
+                                                        ${hasPermission('manage_interpreters') || hasPermission('all') ? html`
+                                                            <button onClick=${() => editInterpreter(interp)} class="text-blue-400 hover:text-blue-300">✏️</button>
+                                                            <button onClick=${() => toggleInterpreterStatus(interp.id)} class="text-yellow-400 hover:text-yellow-300">
+                                                                ${interp.status === 'active' ? '⏸️' : '▶️'}
+                                                            </button>
+                                                            <button onClick=${() => deleteInterpreter(interp.id)} class="text-red-400 hover:text-red-300">🗑️</button>
+                                                        ` : ''}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        `) : html`<p class="text-gray-400 text-center py-8">No interpreters</p>`}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${view === 'records' ? html`
+                                <div class="space-y-6">
+                                    <h2 class="text-3xl font-bold">Clock Records</h2>
+                                    <input
+                                        type="text"
+                                        placeholder="🔍 Search..."
+                                        value=${searchTerm}
+                                        onInput=${(e) => setSearchTerm(e.target.value)}
+                                        class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                                    />
+                                    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        ${filtered.length > 0 ? filtered.slice().reverse().map(rec => html`
+                                            <div key=${rec.id} class="bg-gray-700 rounded-lg p-4 mb-3 flex items-center justify-between">
+                                                <div class="flex items-center space-x-4">
+                                                    ${rec.checkInPhoto ? html`
+                                                        <img 
+                                                            src=${rec.checkInPhoto} 
+                                                            alt="In" 
+                                                            class="w-12 h-12 rounded-full object-cover cursor-pointer" 
+                                                            onClick=${() => setSelectedPhoto(rec.checkInPhoto)}
+                                                        />
+                                                    ` : html`<div class="w-12 h-12 bg-gray-600 rounded-full"></div>`}
+                                                    <div>
+                                                        <p class="font-semibold">${rec.userName}</p>
+                                                        <p class="text-sm text-gray-400">${new Date(rec.checkInTime).toLocaleString()}</p>
+                                                    </div>
+                                                </div>
+                                                <span class=${`px-3 py-1 rounded-full text-xs ${rec.status === 'late' ? 'bg-yellow-900 text-yellow-300' : 'bg-green-900 text-green-300'}`}>
+                                                    ${rec.status?.toUpperCase()}
+                                                </span>
+                                            </div>
+                                        `) : html`<p class="text-gray-400 text-center py-8">No records</p>`}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${view === 'messages' ? html`
+                                <div class="space-y-6">
+                                    <h2 class="text-3xl font-bold">Messages</h2>
+                                    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        ${adminMessages.length > 0 ? adminMessages.slice().reverse().map(msg => html`
+                                            <div 
+                                                key=${msg.id} 
+                                                class=${`bg-gray-700 rounded-lg p-4 mb-3 cursor-pointer ${!msg.read ? 'border-l-4 border-yellow-500' : ''}`}
+                                                onClick=${() => { setSelectedMessage(msg); markMessageRead(msg.id); }}
+                                            >
+                                                <div class="flex items-start justify-between">
+                                                    <div>
+                                                        <p class="font-semibold">${msg.subject}</p>
+                                                        <p class="text-sm text-gray-400">${msg.userName}</p>
+                                                    </div>
+                                                    <span class=${`px-2 py-1 rounded text-xs ${msg.priority === 'high' ? 'bg-red-900 text-red-300' : 'bg-yellow-900 text-yellow-300'}`}>
+                                                        ${msg.priority?.toUpperCase()}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        `) : html`<p class="text-gray-400 text-center py-8">No messages</p>`}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${view === 'team' ? html`
+                                <div class="space-y-6">
+                                    <div class="flex items-center justify-between">
+                                        <h2 class="text-3xl font-bold">Team</h2>
+                                        ${hasPermission('manage_team') || hasPermission('all') ? html`
+                                            <button onClick=${() => setShowTeamModal(true)} class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                                                ➕ Add Member
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        <div class="bg-gray-700 rounded-lg p-4 mb-3">
+                                            <p class="font-semibold">${currentAdmin.name} (You)</p>
+                                            <span class="text-xs px-2 py-1 bg-purple-900 text-purple-300 rounded">SUPER ADMIN</span>
+                                        </div>
+                                        ${teamMembers.map(member => html`
+                                            <div key=${member.id} class="bg-gray-700 rounded-lg p-4 mb-3 flex items-center justify-between">
+                                                <div>
+                                                    <p class="font-semibold">${member.name}</p>
+                                                    <p class="text-sm text-gray-400">${member.email}</p>
+                                                </div>
+                                                ${hasPermission('manage_team') || hasPermission('all') ? html`
+                                                    <button onClick=${() => removeTeamMember(member.id)} class="text-red-400">🗑️</button>
+                                                ` : ''}
+                                            </div>
+                                        `)}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${view === 'notifications' ? html`
+                                <div class="space-y-6">
+                                    <div class="flex items-center justify-between">
+                                        <h2 class="text-3xl font-bold">Send Notifications</h2>
+                                        ${hasPermission('send_notifications') || hasPermission('all') ? html`
+                                            <button onClick=${() => setShowNotifModal(true)} class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                                                ➕ New
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${view === 'settings' ? html`
+                                <div class="space-y-6">
+                                    <h2 class="text-3xl font-bold">Settings</h2>
+                                    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+                                        <button onClick=${exportData} class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
+                                            Export Backup
+                                        </button>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </main>
+                    </div>
+
+                    ${showInterpreterModal ? html`
+                        <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                            <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full border border-gray-700 max-h-screen overflow-y-auto">
+                                <h3 class="text-2xl font-bold mb-4">${editingInterpreter ? 'Edit' : 'Add'} Interpreter</h3>
+                                <div class="space-y-4">
+                                    <input type="text" placeholder="Name" value=${newInterpreter.name} onInput=${(e) => setNewInterpreter({...newInterpreter, name: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" />
+                                    <input type="email" placeholder="Email" value=${newInterpreter.email} onInput=${(e) => setNewInterpreter({...newInterpreter, email: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" />
+                                    <input type="text" placeholder="Languages (comma separated)" value=${newInterpreter.languages} onInput=${(e) => setNewInterpreter({...newInterpreter, languages: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" />
+                                    <div class="flex space-x-3">
+                                        <button onClick=${addOrUpdateInterpreter} class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg">Save</button>
+                                        <button onClick=${() => {setShowInterpreterModal(false); setEditingInterpreter(null);}} class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${showNotifModal ? html`
+                        <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                            <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full border border-gray-700">
+                                <h3 class="text-2xl font-bold mb-4">Create Notification</h3>
+                                <div class="space-y-4">
+                                    <select value=${newNotif.type} onInput=${(e) => setNewNotif({...newNotif, type: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                                        <option value="training">Training</option>
+                                        <option value="qa_session">QA Session</option>
+                                        <option value="announcement">Announcement</option>
+                                    </select>
+                                    <input type="text" placeholder="Title" value=${newNotif.title} onInput=${(e) => setNewNotif({...newNotif, title: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" />
+                                    <textarea placeholder="Description" value=${newNotif.description} onInput=${(e) => setNewNotif({...newNotif, description: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white h-24"></textarea>
+                                    <input type="text" placeholder="Tags (comma separated)" value=${newNotif.tags} onInput=${(e) => setNewNotif({...newNotif, tags: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" />
+                                    <div class="flex space-x-3">
+                                        <button onClick=${sendNotification} class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg">Send</button>
+                                        <button onClick=${() => setShowNotifModal(false)} class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${showTeamModal ? html`
+                        <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                            <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full border border-gray-700">
+                                <h3 class="text-2xl font-bold mb-4">Add Team Member</h3>
+                                <div class="space-y-4">
+                                    <input type="text" placeholder="Name" value=${newTeamMember.name} onInput=${(e) => setNewTeamMember({...newTeamMember, name: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" />
+                                    <input type="email" placeholder="Email" value=${newTeamMember.email} onInput=${(e) => setNewTeamMember({...newTeamMember, email: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white" />
+                                    <select value=${newTeamMember.role} onInput=${(e) => setNewTeamMember({...newTeamMember, role: e.target.value})} class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white">
+                                        <option value="manager">Manager</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
+                                    <div class="flex space-x-3">
+                                        <button onClick=${addTeamMember} class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg">Add</button>
+                                        <button onClick=${() => setShowTeamModal(false)} class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${showClearModal ? html`
+                        <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                            <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full border border-red-700">
+                                <h3 class="text-2xl font-bold text-red-300 mb-4">⚠️ Clear House</h3>
+                                <p class="text-gray-300 mb-4">This will backup and delete data older than 1 month.</p>
+                                <div class="flex space-x-3">
+                                    <button onClick=${clearHouse} class="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg">Proceed</button>
+                                    <button onClick=${() => setShowClearModal(false)} class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${selectedPhoto ? html`
+                        <div class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4" onClick=${() => setSelectedPhoto(null)}>
+                            <img src=${selectedPhoto} alt="Full" class="max-w-4xl w-full h-auto rounded-lg" />
+                        </div>
+                    ` : ''}
+
+                    ${selectedMessage ? html`
+                        <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" onClick=${() => setSelectedMessage(null)}>
+                            <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full border border-gray-700" onClick=${(e) => e.stopPropagation()}>
+                                <h3 class="text-2xl font-bold mb-4">Message Details</h3>
+                                <div class="space-y-3">
+                                    <div>
+                                        <p class="text-sm text-gray-400">From</p>
+                                        <p class="font-semibold">${selectedMessage.userName} (${selectedMessage.userEmail})</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-gray-400">Subject</p>
+                                        <p class="font-semibold">${selectedMessage.subject}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-gray-400">Message</p>
+                                        <div class="bg-gray-700 rounded-lg p-4 mt-2">
+                                            <p class="text-white whitespace-pre-wrap">${selectedMessage.message}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick=${() => setSelectedMessage(null)} class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg mt-4">Close</button>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        render(html`<${AdminCRM} />`, document.getElementById('app'));
+    </script>
+</body>
+</html>
